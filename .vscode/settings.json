@@ -1,0 +1,25 @@
+{
+    "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v6.1",
+    "idf.customExtraVars": {
+        "IDF_PATH": "C:/Espressif/frameworks/esp-idf-v6.1",
+        "IDF_TOOLS_PATH": "C:/Espressif",
+        "IDF_PYTHON_ENV_PATH": "C:/Espressif/python_env/idf6.1_py3.11_env",
+        "ESP_IDF_VERSION": "6.1.0",
+        "ESP_ROM_ELF_DIR": "C:/Espressif/tools/esp-rom-elfs/20241011",
+        "PYTHONUTF8": "1"
+    },
+    "idf.adapterTargetName": "esp32p4",
+    "idf.flashType": "UART",
+    "idf.flashBaudRate": "460800",
+    "idf.monitorBaudRate": "115200",
+    "idf.buildPath": "build",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "clangd.path": "C:\\Espressif\\tools\\esp-clangd\\esp-21.1.3_20260408\\esp-clangd\\bin\\clangd.exe",
+    "clangd.arguments": [
+      "--background-index",
+      "--query-driver=**",
+      "--compile-commands-dir=c:\\Users\\25873\\Desktop\\P4-YOLO\\build"
+    ],
+    "idf.port": "COM17"
+}

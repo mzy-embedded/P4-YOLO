@@ -1,0 +1,111 @@
+# P4-YOLO 默认配置 —— 本工程唯一的一份配置片段。
+#
+# 本工程固定 WT9932P4X-TINY (ESP32-P4 v3.x)，不再使用 wt_bsp 的多板卡选板机制；
+# 原先分散在 sdkconfig.defaults / sdkconfig.defaults.esp32p4 / sdkconfig.wt9932p4x_tiny /
+# sdkconfig.board 四份文件中的内容已合并到这里，各段的 why 注释原样保留。
+#
+# 板卡识别: components/wt_bsp/boards/WT9932P4-TINY/Kconfig.projbuild 内有
+#     default y if !WT_BSP_BOARD_SELECTED_BY_TOOL
+# 不走选板工具时，esp32p4 目标下 CONFIG_WT_BSP_BOARD_WT9932P4_TINY 自动为 y，
+# 不需要任何额外的 sdkconfig 参与。
+
+# ---- 目标芯片与 Flash --------------------------------------------------------
+
+CONFIG_IDF_TARGET="esp32p4"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# ---- 分区表 ------------------------------------------------------------------
+
+# Custom partition table: the 1MB default factory cannot hold the YOLO model.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-16MiB.csv"
+
+# ---- ESP32-P4 芯片版本 (WT9932P4X-TINY) --------------------------------------
+
+# 本板为 ESP32-P4 v3.x。与 v1.x 的 WT9932P4-TINY 外设接线相同但固件不能混用，
+# 必须显式关掉"允许 v3 以下版本"的兼容开关，否则 bootloader 会拒绝启动。
+# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
+CONFIG_ESP32P4_REV_MIN_300=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_400=y
+
+# ---- Bootloader --------------------------------------------------------------
+
+# 分区表位于 0x8000，bootloader 只有 0x2000..0x8000 这 24KB。
+# 把日志级别压到 WARN 是为了让 bootloader 塞进该空间，不要改回去。
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_BOOTLOADER_LOG_LEVEL=2
+
+# ---- PSRAM 与缓存 ------------------------------------------------------------
+
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+
+# 已证伪的实验, 记录以免重复尝试:
+# 曾把 CONFIG_SPIRAM_XIP_FROM_PSRAM / FETCH_INSTRUCTIONS 关掉, 想让 esp-dl 的
+# 汇编从 flash 取指以提速。实测反而从 2.64s 变慢到 2.78s, 故还原厂商配置。
+# 推理 2.6s vs 官方 0.6s 的差距另有原因, 未定位。
+
+# ---- 任务与调度 --------------------------------------------------------------
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=10240
+CONFIG_FREERTOS_HZ=1000
+
+# ---- 日志 --------------------------------------------------------------------
+
+CONFIG_LOG_DYNAMIC_LEVEL_CONTROL=y
+CONFIG_LOG_TAG_LEVEL_IMPL_CACHE_AND_LINKED_LIST=y
+
+# ---- 摄像头 SC2336 (MIPI CSI) ------------------------------------------------
+
+CONFIG_CAMERA_SC2336=y
+CONFIG_CAMERA_SC2336_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
+CONFIG_CAMERA_SC2336_MIPI_RAW8_1024X600_30FPS=y
+CONFIG_CAMERA_SC2336_MIPI_DEFAULT_FMT_RAW8_1024X600_30FPS=y
+CONFIG_CAMERA_XCLK_USE_ESP_CLOCK_ROUTER=y
+
+# ---- 视频 / ISP / 硬件 JPEG --------------------------------------------------
+
+CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
+CONFIG_ESP_VIDEO_ENABLE_HW_JPEG_ENC_VIDEO_DEVICE=y
+
+# ---- WT_BSP 功能开关 ---------------------------------------------------------
+
+# 本地 SPI-LCD 预览模式: 关闭 UVC, 让 wt_bsp_csi_start() 独占 CSI 采集设备。
+# (原注释: UVC is off so wt_bsp_csi_start() owns the CSI device.)
+CONFIG_WT_BSP_ENABLE_USB_DEVICE_UVC=n
+CONFIG_WT_BSP_ENABLE_CSI=y
+CONFIG_WT_BSP_ENABLE_RGB=y
+CONFIG_WT_BSP_ENABLE_USB_DEVICE_CDC=n
+# 板载按键 (IO35, 低电平有效) 用于短按切换屏幕旋转方向
+CONFIG_WT_BSP_ENABLE_BUTTON=y
+CONFIG_WT_BSP_ENABLE_SDMMC=n
+CONFIG_WT_BSP_ENABLE_DSI=n
+CONFIG_WT_BSP_ENABLE_TOUCH=n
+
+# ---- YOLO 目标检测 (esp-dl / coco_detect) ------------------------------------
+
+# Only the 320x320 variant is linked in. Both P4 models are ~2.9MB, so enabling
+# both would blow past the partition; 640x640 is also far too slow on P4 (~2.8s).
+# CONFIG_FLASH_COCO_DETECT_YOLO11N_S8_V1 defaults to y, so it must be turned off
+# explicitly, otherwise the 640 model gets packed in as well.
+CONFIG_FLASH_COCO_DETECT_YOLO11N_S8_V1=n
+CONFIG_FLASH_COCO_DETECT_YOLO11N_320_S8_V1=y
+CONFIG_COCO_DETECT_YOLO11N_320_S8_V1=y
+# Embed the packed .espdl into the app rodata (no separate flash step needed).
+CONFIG_COCO_DETECT_MODEL_IN_FLASH_RODATA=y
+
+# NOTE: do NOT disable esp-dl's PIX_CVT_* pixel-conversion options to save flash.
+# They look like easy wins (~0.9MB total), but the dispatcher is resolved at
+# RUNTIME, not link time: turning off a pair the preprocessor actually uses
+# still builds and links fine, then fails per-frame with
+#   "pix_cvt_dispatch: Invalid pix cvt from DL_IMAGE_PIX_TYPE_..."
+# and wedges the inference inside run(). The 320 model's input path is
+# RGB565 -> RGB888 -> RGB888_QINT8, so at minimum both of those must stay on.
+# The 8MB factory partition is sized to hold the untrimmed build.
+
+# ---- 实验特性 ----------------------------------------------------------------
+
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y

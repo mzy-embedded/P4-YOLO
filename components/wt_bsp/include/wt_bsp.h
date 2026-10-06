@@ -1,0 +1,124 @@
+/**
+ * @file wt_bsp.h
+ * @author cangyu (sky.kirto@qq.com)
+ * @brief Wireless-Tag BSP 组件的公共入口。
+ * @version 0.1
+ * @date 2026-05-11
+ *
+ * @copyright Copyright (c) 2026, Wireless-Tag. All rights reserved.
+ *
+ */
+
+#ifndef __WT_BSP_H__
+#define __WT_BSP_H__
+
+/* ==================== [Includes] ========================================== */
+
+#include "wt_bsp_config_internal.h"
+#include "wt_bsp_board.h"
+#include "wt_bsp_button.h"
+#include "wt_bsp_rgb.h"
+#include "wt_bsp_sdmmc.h"
+#include "wt_bsp_dsi.h"
+#include "wt_bsp_csi.h"
+#include "wt_bsp_touch.h"
+#include "wt_bsp_usb_device_cdc.h"
+#include "wt_bsp_camera.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ==================== [Defines] =========================================== */
+
+/* ==================== [Typedefs] ========================================== */
+
+/* ==================== [Global Prototypes] ================================= */
+
+/**
+ * @brief 初始化当前选中板卡的 BSP。
+ *
+ * 该函数会获取板级接口，并初始化 BSP 组件对外暴露的板卡资源。
+ *
+ * @return 成功时返回 ESP_OK，失败时返回 ESP-IDF 错误码。
+ */
+esp_err_t wt_bsp_init(void);
+
+/**
+ * @brief 反初始化当前选中板卡的 BSP。
+ *
+ * @return 成功时返回 ESP_OK，失败时返回 ESP-IDF 错误码。
+ */
+esp_err_t wt_bsp_deinit(void);
+
+/**
+ * @brief 获取已初始化的板卡信息句柄。
+ *
+ * @return 板卡句柄；BSP 未初始化时返回 NULL。
+ */
+wt_bsp_board_t wt_bsp_get_board(void);
+
+/**
+ * @brief 获取已初始化的默认按键句柄。
+ *
+ * @return 按键句柄；BSP 未初始化或按键支持关闭时返回 NULL。
+ */
+wt_bsp_button_t wt_bsp_get_button(void);
+
+/**
+ * @brief 获取已初始化的默认 RGB LED 句柄。
+ *
+ * @return RGB LED 句柄；BSP 未初始化 or RGB 支持关闭时返回 NULL。
+ */
+wt_bsp_rgb_t wt_bsp_get_rgb(void);
+
+/**
+ * @brief 获取已初始化的默认 SD 卡句柄。
+ *
+ * @return SD 卡句柄；BSP 未初始化或 SD 卡支持关闭时返回 NULL。
+ */
+wt_bsp_sdmmc_t wt_bsp_get_sdmmc(void);
+
+/**
+ * @brief 获取已初始化的默认 DSI 显示句柄。
+ *
+ * @return DSI 显示句柄；BSP 未初始化或 DSI 支持关闭时返回 NULL。
+ */
+wt_bsp_dsi_t wt_bsp_get_dsi(void);
+
+/**
+ * @brief 获取已初始化的默认 CSI 摄像头句柄。
+ *
+ * @return CSI 摄像头句柄；BSP 未初始化或 CSI 支持关闭时返回 NULL。
+ */
+wt_bsp_csi_t wt_bsp_get_csi(void);
+
+/**
+ * @brief 获取已初始化的默认触摸句柄。
+ *
+ * @return 触摸句柄；BSP 未初始化或触摸支持关闭时返回 NULL。
+ */
+wt_bsp_touch_t wt_bsp_get_touch(void);
+
+/**
+ * @brief 获取默认 USB CDC 句柄, 由 BSP 持有并随 wt_bsp_deinit() 释放。
+ *
+ * 应用不得释放该句柄, 使用期间不得反初始化 BSP。
+ * @return 已初始化的 CDC 句柄; 功能关闭、不支持或初始化失败时返回 NULL。
+ */
+wt_bsp_usb_device_cdc_t wt_bsp_get_usb_device_cdc(void);
+
+/**
+ * @brief Get the board-owned camera adapter for local JPEG capture.
+ * @return Camera handle, or NULL if BSP/feature is unavailable. The application
+ *         must not release it. Sensor availability is checked by prepare().
+ */
+wt_bsp_camera_t wt_bsp_get_camera(void);
+
+/* ==================== [Macros] ============================================ */
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+#endif // __WT_BSP_H__

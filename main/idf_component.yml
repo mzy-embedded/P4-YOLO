@@ -1,0 +1,18 @@
+## ESP-DL 目标检测依赖。
+##
+## 声明【无条件】(不带 rules): 组件管理器在首次 cmake 配置时就会下载它们, 从而
+## main 的 REQUIRES 能在同一遍配置里解析成功。若写在 rules 里依赖某个 CONFIG,
+## fullclean 后首遍配置 CONFIG 尚未生成, 组件不会被下载, main 就会
+## "Failed to resolve component ... unknown name" 而中断构建。
+##
+## 版本说明:
+##  - IDF 下界取 6.0: esp-dl 3.3.x 不支持 v6.0 以下, components/wt_bsp 也要求
+##    >=6.0.0。本机实际用 v6.1 (见 build.ps1 与 README)。原先写 >=5.3 会放过
+##    5.x, 然后一路编到 wt_bsp 才报错, 错误信息还指向 wt_bsp, 排查要绕远路。
+##  - esp-dl 3.3.7 因 "do not support idf v6.0" 被官方下架, 所以下界取 3.3.8;
+##    这同时也排除了被 yank 的版本 (registry 本就不会再选中它)。
+##  - coco_detect 不锁死, 让求解器挑与 esp-dl 和 IDF 6.1 都相容的版本。
+dependencies:
+  idf: ">=6.0"
+  espressif/esp-dl: ">=3.3.8"
+  espressif/coco_detect: "*"

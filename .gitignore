@@ -1,0 +1,14 @@
+# 构建产物
+build/
+managed_components/
+
+# 本地配置: 只跟踪 sdkconfig.defaults 作为唯一配置来源
+# 根 sdkconfig 是 IDF 依据 sdkconfig.defaults 生成的产物。两份并存会有静默漂移:
+# IDF 的规则是 defaults 只为 sdkconfig 里尚不存在的符号提供初值, 已存在的配置项
+# 以 sdkconfig 为准 —— 于是"改了 sdkconfig.defaults 却不生效"这种坑必然出现。
+# 因此 sdkconfig 不跟踪, 本机 menuconfig 的改动也就不回写仓库。
+sdkconfig
+sdkconfig.old
+
+# 本机私有配置: Claude Code 的本地权限白名单, 内含本机绝对路径
+.claude/settings.local.json

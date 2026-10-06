@@ -1,0 +1,18 @@
+# Custom partition table for ESP32-P4 / WT9932P4X-TINY, 16MB flash.
+#
+# factory is 8MB: the app carries the ESP-DL YOLO model in its rodata.
+# Measured with an untrimmed esp-dl: 2.9MB model + ~2.8MB of esp-dl pixel
+# conversion tables + 0.64MB of app = ~6.3MB. Trimming the unused pixel
+# conversion paths (CONFIG_PIX_CVT_*) in sdkconfig.defaults cuts a few MB,
+# but the partition is sized for the untrimmed worst case so it cannot bite.
+#
+# Constraints:
+#   - factory must stay at offset 0x10000: flash.ps1 hardcodes the app address.
+#   - the partition table itself sits at 0x8000, so the bootloader only has
+#     ~24KB (0x2000..0x8000). Do NOT revert CONFIG_BOOTLOADER_LOG_LEVEL_WARN
+#     in sdkconfig.defaults, it exists to keep the bootloader that small.
+#
+# name,   type, subtype, offset,   size,     flags
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x800000,

@@ -1,0 +1,25 @@
+# 本工程固定使用 WT9932P4X-TINY (ESP32-P4 v3.x)，已移除 wt_bsp 的多板卡选板机制。
+# 原首行 `orsource "$WT_BSP_BOARD_KCONFIG"` 用于引入选板工具生成的板级 Kconfig；
+# 现改由下方 WT9932P4-TINY/Kconfig.projbuild 的
+#     default y if !WT_BSP_BOARD_SELECTED_BY_TOOL
+# 兜底 —— 不走选板工具时，esp32p4 目标下自动选中该板，不需要额外 Kconfig。
+
+rsource "WT9932C2-TINY/Kconfig.projbuild"
+rsource "WT9932C3-TINY/Kconfig.projbuild"
+rsource "WT9932C5-TINY/Kconfig.projbuild"
+rsource "WT9932C61-TINY/Kconfig.projbuild"
+rsource "WT9932P4-TINY/Kconfig.projbuild"
+rsource "WT9932P4C61-TINY/Kconfig.projbuild"
+rsource "WT9932S31-TINY/Kconfig.projbuild"
+
+config WT_BSP_ENABLE_USB_DEVICE_UVC
+    bool "Enable USB Device UVC"
+    depends on WT_BSP_BOARD_WT9932P4_TINY || WT_BSP_BOARD_WT9932P4C61_TINY || WT_BSP_BOARD_WT9932S31_TINY
+    select WT_BSP_ENABLE_CSI if IDF_TARGET_ESP32P4
+    select WT_BSP_ENABLE_RGB if IDF_TARGET_ESP32P4
+    default n
+    help
+        Expose the board camera to a USB host as a High-Speed UVC MJPEG
+        camera. Uses CSI on ESP32-P4 and DVP on ESP32-S31. UVC owns the
+        USB device stack. Boards with composite USB support may expose CDC
+        on the same stack; a second independent USB driver cannot coexist.

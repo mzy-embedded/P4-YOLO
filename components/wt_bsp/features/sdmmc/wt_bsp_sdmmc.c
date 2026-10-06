@@ -1,0 +1,274 @@
+/**
+ * @file wt_bsp_sdmmc.c
+ * @author cangyu (sky.kirto@qq.com)
+ * @brief
+ * @version 0.1
+ * @date 2026-05-24
+ *
+ * @copyright Copyright (c) 2026, Wireless-Tag. All rights reserved.
+ *
+ */
+
+/* ==================== [Includes] ========================================== */
+
+#include "wt_bsp_sdmmc_port.h"
+
+#if WT_BSP_SDMMC_ENABLED
+
+#include <string.h>
+#include "driver/sdspi_host.h"
+#include "driver/spi_master.h"
+#include "esp_log.h"
+#include "esp_vfs_fat.h"
+#include "sd_pwr_ctrl_by_on_chip_ldo.h"
+#include "soc/soc_caps.h"
+
+/* ==================== [Defines] =========================================== */
+
+/* ==================== [Typedefs] ========================================== */
+
+/* ==================== [Static Prototypes] ================================= */
+
+/* ==================== [Static Variables] ================================== */
+
+static const char *TAG = "wt_bsp_sdmmc";
+
+/* ==================== [Macros] ============================================ */
+
+/* ==================== [Global Functions] ================================== */
+
+esp_err_t wt_bsp_sdmmc_init(wt_bsp_sdmmc_t sdmmc, const wt_bsp_sdmmc_info_t *info)
+{
+    if (sdmmc == NULL || info == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(sdmmc, 0, sizeof(wt_bsp_sdmmc_obj_t));
+    sdmmc->info = *info;
+    sdmmc->is_initialized = false;
+    sdmmc->is_mounted = false;
+    sdmmc->spi_bus_initialized = false;
+    sdmmc->card = NULL;
+    sdmmc->pwr_ctrl_handle = NULL;
+
+#if SOC_GP_LDO_SUPPORTED
+    // Initialize on-chip LDO for SD card power if requested
+    if (sdmmc->info.use_on_chip_ldo) {
+        ESP_LOGI(TAG, "Initializing on-chip LDO channel %d for SD card",
+                 sdmmc->info.ldo_chan_id);
+        sd_pwr_ctrl_ldo_config_t ldo_config = {
+            .ldo_chan_id = sdmmc->info.ldo_chan_id,
+        };
+        esp_err_t ret = sd_pwr_ctrl_new_on_chip_ldo(&ldo_config, &sdmmc->pwr_ctrl_handle);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize on-chip LDO: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        ESP_LOGI(TAG, "On-chip LDO initialized successfully");
+    }
+#endif
+
+    sdmmc->is_initialized = true;
+
+    return ESP_OK;
+}
+
+esp_err_t wt_bsp_sdmmc_deinit(wt_bsp_sdmmc_t sdmmc)
+{
+    if (sdmmc == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (sdmmc->is_mounted) {
+        wt_bsp_sdmmc_unmount(sdmmc);
+    }
+
+#if SOC_GP_LDO_SUPPORTED
+    // Release on-chip LDO power control handle
+    if (sdmmc->pwr_ctrl_handle != NULL) {
+        ESP_LOGI(TAG, "Releasing on-chip LDO power control");
+        sd_pwr_ctrl_del_on_chip_ldo(sdmmc->pwr_ctrl_handle);
+        sdmmc->pwr_ctrl_handle = NULL;
+    }
+#endif
+
+    sdmmc->is_initialized = false;
+
+    return ESP_OK;
+}
+
+esp_err_t wt_bsp_sdmmc_mount(wt_bsp_sdmmc_t sdmmc)
+{
+    if (sdmmc == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (sdmmc->is_mounted) {
+        ESP_LOGW(TAG, "SD card already mounted");
+        return ESP_OK;
+    }
+
+    esp_err_t ret;
+
+    // Options for mounting the filesystem.
+    // If format_if_mount_failed is set to true, SD card will be partitioned and
+    // formatted in case when mounting fails.
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = false,
+        .max_files = 5,
+        .allocation_unit_size = 16 * 1024
+    };
+
+    if (sdmmc->info.use_sdspi) {
+        ESP_LOGI(TAG, "Using SDSPI peripheral");
+
+        sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+        host.slot = sdmmc->info.spi_host;
+#if SOC_GP_LDO_SUPPORTED
+        host.pwr_ctrl_handle = sdmmc->pwr_ctrl_handle;
+#endif
+
+        spi_bus_config_t bus_config = {
+            .mosi_io_num = sdmmc->info.cmd_gpio,
+            .miso_io_num = sdmmc->info.d0_gpio,
+            .sclk_io_num = sdmmc->info.clk_gpio,
+            .quadwp_io_num = -1,
+            .quadhd_io_num = -1,
+            .max_transfer_sz = 16 * 1024,
+        };
+        ret = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize SDSPI bus: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        sdmmc->spi_bus_initialized = true;
+
+        sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+        slot_config.gpio_cs = sdmmc->info.d3_gpio;
+        slot_config.host_id = host.slot;
+
+        ESP_LOGI(TAG, "Mounting filesystem");
+        ret = esp_vfs_fat_sdspi_mount(sdmmc->info.mount_point, &host, &slot_config,
+                                      &mount_config, &sdmmc->card);
+        if (ret != ESP_OK) {
+            spi_bus_free(host.slot);
+            sdmmc->spi_bus_initialized = false;
+            ESP_LOGE(TAG, "Failed to initialize the card (%s)", esp_err_to_name(ret));
+            return ret;
+        }
+
+        sdmmc->is_mounted = true;
+        ESP_LOGI(TAG, "Filesystem mounted");
+        sdmmc_card_print_info(stdout, sdmmc->card);
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Using SDMMC peripheral");
+
+    // By default, SDMMC host property has its 'slot' set to 1.
+    // The board selects the slot supported by its SD wiring.
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.slot = sdmmc->info.slot;
+
+#if SOC_GP_LDO_SUPPORTED
+    // Supply the SD pad regulator on SoCs with a general-purpose LDO.
+    host.pwr_ctrl_handle = sdmmc->pwr_ctrl_handle;
+#endif
+
+    // ESP32-S31 uses external 3.3 V card power with an internal 1.8 V pad LDO.
+#if SOC_SDMMC_IO_UHS_POWER_EXTERNAL
+    host.io_voltage = 1.8f;
+#endif
+
+    // This initializes the slot without card detect or write protect signals.
+    // Modify slot_config.cd and slot_config.wp if your board has these signals.
+    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot_config.width = sdmmc->info.width;
+    slot_config.cd = sdmmc->info.cd_gpio;
+    slot_config.wp = sdmmc->info.wp_gpio;
+#if SOC_SDMMC_USE_GPIO_MATRIX
+    slot_config.clk = sdmmc->info.clk_gpio;
+    slot_config.cmd = sdmmc->info.cmd_gpio;
+    slot_config.d0 = sdmmc->info.d0_gpio;
+    slot_config.d1 = sdmmc->info.d1_gpio;
+    slot_config.d2 = sdmmc->info.d2_gpio;
+    slot_config.d3 = sdmmc->info.d3_gpio;
+#endif
+
+    // For ESP32-P4, if we want to use specific pins, we might need to set them.
+    // However, usually SDMMC pins are fixed on some SoC versions or handled by GPIO matrix.
+    // In P4, SDMMC pins are typically dedicated.
+
+    ESP_LOGI(TAG, "Mounting filesystem");
+    ret = esp_vfs_fat_sdmmc_mount(sdmmc->info.mount_point, &host, &slot_config, &mount_config, &sdmmc->card);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount filesystem. "
+                     "If you want the card to be formatted, set format_if_mount_failed = true.");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize the card (%s). "
+                     "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
+        }
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "Filesystem mounted");
+    sdmmc->is_mounted = true;
+
+    // Card has been initialized, print its properties
+    sdmmc_card_print_info(stdout, sdmmc->card);
+
+    return ESP_OK;
+}
+
+esp_err_t wt_bsp_sdmmc_unmount(wt_bsp_sdmmc_t sdmmc)
+{
+    if (sdmmc == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!sdmmc->is_mounted) {
+        ESP_LOGW(TAG, "SD card not mounted");
+        return ESP_OK;
+    }
+
+    esp_err_t ret = esp_vfs_fat_sdcard_unmount(sdmmc->info.mount_point, sdmmc->card);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to unmount filesystem (%s)", esp_err_to_name(ret));
+        return ret;
+    }
+
+    sdmmc->is_mounted = false;
+    sdmmc->card = NULL;
+
+    if (sdmmc->spi_bus_initialized) {
+        ret = spi_bus_free(sdmmc->info.spi_host);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to free SDSPI bus (%s)", esp_err_to_name(ret));
+        }
+        sdmmc->spi_bus_initialized = false;
+    }
+
+    ESP_LOGI(TAG, "Card unmounted");
+
+    return ret;
+}
+
+sdmmc_card_t *wt_bsp_sdmmc_get_card(wt_bsp_sdmmc_t sdmmc)
+{
+    if (sdmmc == NULL) {
+        return NULL;
+    }
+    return sdmmc->card;
+}
+
+const char *wt_bsp_sdmmc_get_mount_point(wt_bsp_sdmmc_t sdmmc)
+{
+    if (sdmmc == NULL) {
+        return "";
+    }
+    return sdmmc->info.mount_point;
+}
+
+#endif // WT_BSP_SDMMC_ENABLED
